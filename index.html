@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#151515">
+<title>Draw</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#202020;color:#eee;font-family:Arial,Helvetica,sans-serif}
+body{display:flex;flex-direction:column;touch-action:none}
+button,input{font:inherit}
+#topbar,#toolbar{background:#151515;border-color:#333;display:flex;align-items:center;gap:7px}
+#topbar{height:54px;min-height:54px;border-bottom:1px solid #333;padding:6px 9px}
+#toolbar{height:62px;min-height:62px;border-top:1px solid #333;padding:7px 9px}
+.logo{font-weight:bold;font-size:17px;margin-right:auto}
+.btn{height:40px;min-width:40px;padding:0 10px;border:1px solid #3a3a3a;border-radius:7px;background:#242424;color:#eee;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+.btn:hover{background:#2d2d2d}
+.btn:active,.btn.active{background:#3a3a3a;border-color:#555}
+.icon{font-size:18px;line-height:1}
+.label{font-size:13px}
+.divider{height:30px;width:1px;background:#363636;margin:0 2px}
+#workspace{position:relative;flex:1;min-height:0;background:#282828;overflow:hidden}
+#canvasWrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+#canvas{background:#fff;box-shadow:0 4px 18px #0009;touch-action:none;max-width:none;max-height:none}
+#hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;font-size:15px;pointer-events:none}
+#colorBox{height:40px;display:flex;align-items:center;gap:7px;background:#242424;border:1px solid #3a3a3a;border-radius:7px;padding:4px 8px}
+#colorInput{width:31px;height:31px;padding:0;border:2px solid #ddd;border-radius:6px;background:transparent;cursor:pointer}
+#colorText{font-size:12px;color:#bbb;width:58px}
+#size{width:105px;accent-color:#ddd}
+#sizeValue{font-size:12px;color:#aaa;width:35px}
+#status{font-size:11px;color:#888;margin-left:auto}
+@media(max-width:650px){
+  #topbar{padding:6px}
+  #toolbar{padding:6px;gap:5px}
+  .label{display:none}
+  .btn{min-width:38px;padding:0 8px}
+  #colorBox{padding:4px 5px}
+  #colorText{display:none}
+  #size{width:72px}
+  #status{display:none}
+}
+</style>
+</head>
+<body>
+<header id="topbar">
+  <div class="logo">Draw</div>
+  <button class="btn" id="undo" title="Undo"><span class="icon">↶</span></button>
+  <button class="btn" id="redo" title="Redo"><span class="icon">↷</span></button>
+  <div class="divider"></div>
+  <button class="btn" id="clear" title="Clear canvas"><span class="icon">⌫</span><span class="label">Clear</span></button>
+  <button class="btn" id="save" title="Save PNG"><span class="icon">↓</span><span class="label">Save</span></button>
+</header>
+
+<main id="workspace">
+  <div id="canvasWrap">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div id="hint">Draw something</div>
+</main>
+
+<footer id="toolbar">
+  <button class="btn active" id="brush" title="Brush"><span class="icon">✎</span><span class="label">Brush</span></button>
+  <button class="btn" id="eraser" title="Eraser"><span class="icon">▱</span><span class="label">Eraser</span></button>
+
+  <div class="divider"></div>
+
+  <div id="colorBox" title="Choose color">
+    <input id="colorInput" type="color" value="#171717">
+    <span id="colorText">#171717</span>
+  </div>
+
+  <div class="divider"></div>
+
+  <span class="icon">●</span>
+  <input id="size" type="range" min="1" max="100" value="8">
+  <span id="sizeValue">8px</span>
+
+  <span id="status">Ready</span>
+</footer>
+
+<script>
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+const workspace=document.getElementById("workspace");
+const hint=document.getElementById("hint");
+const colorInput=document.getElementById("colorInput");
+const colorText=document.getElementById("colorText");
+const size=document.getElementById("size");
+const sizeValue=document.getElementById("sizeValue");
+const status=document.getElementById("status");
+
+const WIDTH=1600;
+const HEIGHT=1000;
+canvas.width=WIDTH;
+canvas.height=HEIGHT;
+
+ctx.fillStyle="#fff";
+ctx.fillRect(0,0,WIDTH,HEIGHT);
+
+let tool="brush";
+let drawing=false;
+let last=null;
+let history=[];
+let redoHistory=[];
+
+function resizeCanvas(){
+  const box=workspace.getBoundingClientRect();
+  const scale=Math.min((box.width-28)/WIDTH,(box.height-28)/HEIGHT);
+  canvas.style.width=(WIDTH*scale)+"px";
+  canvas.style.height=(HEIGHT*scale)+"px";
+}
+window.addEventListener("resize",resizeCanvas);
+resizeCanvas();
+
+function saveState(){
+  history.push(ctx.getImageData(0,0,WIDTH,HEIGHT));
+  if(history.length>25)history.shift();
+  redoHistory=[];
+}
+
+function undo(){
+  if(!history.length)return;
+  redoHistory.push(ctx.getImageData(0,0,WIDTH,HEIGHT));
+  ctx.putImageData(history.pop(),0,0);
+  status.textContent="Undo";
+}
+
+function redo(){
+  if(!redoHistory.length)return;
+  history.push(ctx.getImageData(0,0,WIDTH,HEIGHT));
+  ctx.putImageData(redoHistory.pop(),0,0);
+  status.textContent="Redo";
+}
+
+function getPoint(event){
+  const rect=canvas.getBoundingClientRect();
+  return {
+    x:(event.clientX-rect.left)*(WIDTH/rect.width),
+    y:(event.clientY-rect.top)*(HEIGHT/rect.height)
+  };
+}
+
+function startDraw(event){
+  event.preventDefault();
+  saveState();
+  drawing=true;
+  last=getPoint(event);
+  canvas.setPointerCapture(event.pointerId);
+  drawPoint(last);
+}
+
+function moveDraw(event){
+  if(!drawing)return;
+  event.preventDefault();
+  const point=getPoint(event);
+  drawLine(last,point,event.pressure);
+  last=point;
+}
+
+function stopDraw(){
+  drawing=false;
+  last=null;
+  status.textContent="Ready";
+}
+
+function drawPoint(point){
+  ctx.save();
+  ctx.globalCompositeOperation=tool==="eraser"?"destination-out":"source-over";
+  ctx.fillStyle=colorInput.value;
+  ctx.beginPath();
+  ctx.arc(point.x,point.y,Number(size.value)/2,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  hint.style.display="none";
+  status.textContent="Drawing";
+}
+
+function drawLine(a,b,pressure){
+  ctx.save();
+  ctx.globalCompositeOperation=tool==="eraser"?"destination-out":"source-over";
+  ctx.strokeStyle=colorInput.value;
+  ctx.lineWidth=Number(size.value)*(pressure&&pressure>0.05?0.8+pressure*0.4:1);
+  ctx.lineCap="round";
+  ctx.lineJoin="round";
+  ctx.beginPath();
+  ctx.moveTo(a.x,a.y);
+  ctx.lineTo(b.x,b.y);
+  ctx.stroke();
+  ctx.restore();
+  hint.style.display="none";
+  status.textContent="Drawing";
+}
+
+canvas.addEventListener("pointerdown",startDraw);
+canvas.addEventListener("pointermove",moveDraw);
+canvas.addEventListener("pointerup",stopDraw);
+canvas.addEventListener("pointercancel",stopDraw);
+
+function chooseTool(name){
+  tool=name;
+  document.getElementById("brush").classList.toggle("active",name==="brush");
+  document.getElementById("eraser").classList.toggle("active",name==="eraser");
+  status.textContent=name==="brush"?"Brush":"Eraser";
+}
+
+document.getElementById("brush").onclick=()=>chooseTool("brush");
+document.getElementById("eraser").onclick=()=>chooseTool("eraser");
+
+colorInput.oninput=()=>{
+  colorText.textContent=colorInput.value.toUpperCase();
+};
+
+size.oninput=()=>{
+  sizeValue.textContent=size.value+"px";
+};
+
+document.getElementById("undo").onclick=undo;
+document.getElementById("redo").onclick=redo;
+
+document.getElementById("clear").onclick=()=>{
+  saveState();
+  ctx.globalCompositeOperation="source-over";
+  ctx.fillStyle="#fff";
+  ctx.fillRect(0,0,WIDTH,HEIGHT);
+  hint.style.display="block";
+  status.textContent="Cleared";
+};
+
+document.getElementById("save").onclick=()=>{
+  canvas.toBlob(blob=>{
+    const link=document.createElement("a");
+    link.href=URL.createObjectURL(blob);
+    link.download="my-drawing.png";
+    link.click();
+    setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+    status.textContent="Saved";
+  },"image/png");
+};
+
+document.addEventListener("keydown",event=>{
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){
+    event.preventDefault();
+    undo();
+  }
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){
+    event.preventDefault();
+    redo();
+  }
+  if(event.key.toLowerCase()==="b"&&!event.ctrlKey&&!event.metaKey)chooseTool("brush");
+  if(event.key.toLowerCase()==="e"&&!event.ctrlKey&&!event.metaKey)chooseTool("eraser");
+});
+</script>
+</body>
+</html>
